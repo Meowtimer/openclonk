@@ -243,113 +243,58 @@ protected:
 	bool Public;
 };
 
-// A macro to create lists with some helper macros
-// LIST(2, foo) would create ", foo(0), foo(1)
-// TEXT can be a macro
-#define LIST(N, TEXT) LIST##N(TEXT)
-// The lists are used in a context where a leading comma is needed when the list is not empty
-#define LIST0(TEXT)
-#define LIST1(TEXT) LIST0(TEXT), TEXT(0)
-#define LIST2(TEXT) LIST1(TEXT), TEXT(1)
-#define LIST3(TEXT) LIST2(TEXT), TEXT(2)
-#define LIST4(TEXT) LIST3(TEXT), TEXT(3)
-#define LIST5(TEXT) LIST4(TEXT), TEXT(4)
-#define LIST6(TEXT) LIST5(TEXT), TEXT(5)
-#define LIST7(TEXT) LIST6(TEXT), TEXT(6)
-#define LIST8(TEXT) LIST7(TEXT), TEXT(7)
-#define LIST9(TEXT) LIST8(TEXT), TEXT(8)
-#define LIST10(TEXT) LIST9(TEXT), TEXT(9)
+template<class PL> struct C4PropListCoercion {};
+template<> struct C4PropListCoercion<C4Object*>
+{
+	static inline C4Object* Coerce(C4PropList* pl, C4AulDefFuncHelper* func)
+	{
+		C4Object* Obj = pl ? pl->GetObject() : nullptr;
+		if (Obj)
+			return Obj;
+		else
+			throw NeedObjectContext(func->GetName());
+	}
+};
+template<> struct C4PropListCoercion<C4PropList*>
+{
+	static inline C4PropList* Coerce(C4PropList* pl, C4AulDefFuncHelper* func)
+	{
+		return pl;
+	}
+};
 
-// Macros which are passed to LIST
-#define TYPENAMES(N) typename Par##N##_t
-#define PARS(N) Par##N##_t
-#define CONV_TYPE(N) C4ValueConv<Par##N##_t>::Type()
-#define CONV_FROM_C4V(N) C4ValueConv<Par##N##_t>::_FromC4V(pPars[N])
+template<class F> class C4AulDefFuncV;
+template<class R, class PL, class... Args> class C4AulDefFuncV<R(*)(PL, Args...)> : public C4AulDefFuncV<R(PL, Args...)> {
+public:
+	using C4AulDefFuncV<R(PL, Args...)>::C4AulDefFuncV;
+};
 
-// N is the number of parameters pFunc needs. Templates can only have a fixed number of arguments,
-// so eleven templates are needed
-#define TEMPLATE(N)                           \
-template <typename RType LIST(N, TYPENAMES)>  \
-class C4AulDefFunc##N:                        \
-public C4AulDefFuncHelper {                   \
-  public:                                     \
-/* A pointer to the function which this class wraps */ \
-    typedef RType (*Func)(C4PropList * LIST(N, PARS)); \
-    virtual int GetParCount() const { return N; } \
-    virtual C4V_Type GetRetType() const       \
-    { return C4ValueConv<RType>::Type(); }    \
-/* Constructor, using the base class to create the ParType array */ \
-    C4AulDefFunc##N(C4AulScript *pOwner, const char *pName, Func pFunc, bool Public): \
-      C4AulDefFuncHelper(pOwner, pName, Public LIST(N, CONV_TYPE)), pFunc(pFunc) { } \
-/* Extracts the parameters from C4Values and wraps the return value in a C4Value */ \
-    virtual C4Value Exec(C4PropList * _this, C4Value pPars[], bool fPassErrors) \
-    { return C4ValueConv<RType>::ToC4V(pFunc(_this LIST(N, CONV_FROM_C4V))); } \
-  protected:                                  \
-    Func pFunc;                               \
-  };                                          \
-template <typename RType LIST(N, TYPENAMES)>  \
-class C4AulDefObjectFunc##N:                  \
-public C4AulDefFuncHelper {                   \
-  public:                                     \
-/* A pointer to the function which this class wraps */ \
-    typedef RType (*Func)(C4Object * LIST(N, PARS)); \
-    virtual int GetParCount() const { return N; } \
-    virtual C4V_Type GetRetType() const       \
-    { return C4ValueConv<RType>::Type(); }    \
-/* Constructor, using the base class to create the ParType array */ \
-    C4AulDefObjectFunc##N(C4AulScript *pOwner, const char *pName, Func pFunc, bool Public): \
-      C4AulDefFuncHelper(pOwner, pName, Public LIST(N, CONV_TYPE)), pFunc(pFunc) { } \
-/* Extracts the parameters from C4Values and wraps the return value in a C4Value */ \
-    virtual C4Value Exec(C4PropList * _this, C4Value pPars[], bool fPassErrors) \
-    { \
-      C4Object * Obj; if (!_this || !(Obj = _this->GetObject())) throw new NeedObjectContext(GetName()); \
-      return C4ValueConv<RType>::ToC4V(pFunc(Obj LIST(N, CONV_FROM_C4V))); \
-    } \
-  protected:                                  \
-    Func pFunc;                               \
-  };                                          \
-template <typename RType LIST(N, TYPENAMES)>  \
-inline void AddFunc(C4AulScript * pOwner, const char * Name, RType (*pFunc)(C4PropList * LIST(N, PARS)), bool Public=true) \
-  { \
-  new C4AulDefFunc##N<RType LIST(N, PARS)>(pOwner, Name, pFunc, Public); \
-  } \
-template <typename RType LIST(N, TYPENAMES)> \
-inline void AddFunc(C4AulScript * pOwner, const char * Name, RType (*pFunc)(C4Object * LIST(N, PARS)), bool Public=true) \
-  { \
-  new C4AulDefObjectFunc##N<RType LIST(N, PARS)>(pOwner, Name, pFunc, Public); \
-  }
+template<class R, class PL, class... Args> class C4AulDefFuncV<R(PL, Args...)> : public C4AulDefFuncHelper
+{
+public:
+	typedef R(*Func)(PL, Args...);
+	using RType = R;
+	static constexpr std::size_t N = sizeof...(Args);
+	virtual int GetParCount() const { return N; }
+	virtual C4V_Type GetRetType() const { return C4ValueConv<RType>::Type(); }
+	C4AulDefFuncV(C4AulScript* owner, const char *name, Func func, bool Public)
+		: C4AulDefFuncHelper(owner, name, Public, C4ValueConv<Args>::Type()...), pFunc(func)
+	{
+	}
+	virtual C4Value Exec(C4PropList * pl, C4Value pPars[], bool fPassErrors)
+	{
+		PL Obj = C4PropListCoercion<PL>::Coerce(pl, this);
+		int x = 0;
+		return C4ValueConv<RType>::ToC4V(pFunc(Obj, C4ValueConv<Args>::_FromC4V(pPars[x++])...));
+	}
+protected:
+	Func pFunc;
+};
 
-TEMPLATE(0)
-TEMPLATE(1)
-TEMPLATE(2)
-TEMPLATE(3)
-TEMPLATE(4)
-TEMPLATE(5)
-TEMPLATE(6)
-TEMPLATE(7)
-TEMPLATE(8)
-TEMPLATE(9)
-TEMPLATE(10)
-
-
-#undef LIST
-#undef LIST0
-#undef LIST1
-#undef LIST2
-#undef LIST3
-#undef LIST4
-#undef LIST5
-#undef LIST6
-#undef LIST7
-#undef LIST8
-#undef LIST9
-#undef LIST10
-
-#undef TYPENAMES
-#undef PARS
-#undef CONV_TYPE
-#undef CONV_FROM_C4V
-#undef TEMPLATE
+template<typename F> void AddFunc(C4AulScript* owner, const char* name, F func, bool Public = true)
+{
+	new C4AulDefFuncV<F>(owner, name, func, Public);
+}
 
 
 // a definition of a function exported to script
