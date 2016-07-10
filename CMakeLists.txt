@@ -996,7 +996,6 @@ elseif(USE_WIN32_WINDOWS)
 	)
 elseif(USE_COCOA)
 	list(APPEND OC_GUI_SOURCES
-		src/editor/C4ConsoleCocoa.mm
 		src/platform/C4WindowMac.mm
 		src/platform/C4AppDelegate+MainMenuActions.h
 		src/platform/C4AppDelegate+MainMenuActions.mm
@@ -1005,9 +1004,8 @@ elseif(USE_COCOA)
 		src/platform/C4WindowController.h
 		src/platform/C4WindowController.mm
 		src/platform/CocoaKeycodeMap.h
-		src/editor/C4EditorWindowController.h
-		src/editor/C4EditorWindowController.mm
 	)
+	list(APPEND OC_GUI_SOURCES ${QT_EDITOR_SOURCES})
 endif()
 if(WITH_AUTOMATIC_UPDATE)
 	list(APPEND OC_GUI_SOURCES
@@ -1571,3 +1569,9 @@ set(CPACK_PACKAGE_FILE_NAME "openclonk-${C4XVER1}.${C4XVER2}")
 set(CPACK_SOURCE_PACKAGE_FILE_NAME "openclonk-src-${C4XVER1}.${C4XVER2}")
 set(CPACK_SOURCE_GENERATOR "TGZ;ZIP")
 include(CPack)
+
+message("=================================")
+get_cmake_property(_variableNames VARIABLES)
+foreach (_variableName ${_variableNames})
+    message(STATUS "${_variableName}=${${_variableName}}")
+endforeach()
